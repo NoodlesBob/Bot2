@@ -5,6 +5,8 @@ from aiogram.types import Message, ContentType, InlineKeyboardMarkup, InlineKeyb
 from aiogram.filters import Command
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.bot import DefaultBotProperties
+from flask import Flask
+import threading
 import os
 
 # Логування
@@ -14,7 +16,7 @@ logger = logging.getLogger(__name__)
 # Конфігурація
 BOT_TOKEN = os.getenv("BOT_TOKEN")  # Токен бота
 ADMIN_ID = int(os.getenv("ADMIN_ID"))  # ID адміністратора
-HIDDEN_CHANNEL_ID = -1002570163026  # ID прихованого каналу
+HIDDEN_CHANNEL_ID = -1002570163026  # ID вашого каналу
 
 # Ініціалізація бота
 bot = Bot(
@@ -24,10 +26,20 @@ bot = Bot(
 )
 dp = Dispatcher()
 
-# Список для зберігання новин, які очікують модерації
-pending_messages = {}
+# Flask сервер для підтримки роботи порту
+app = Flask(__name__)
 
-# Інструкція
+@app.route("/")
+def index():
+    return "Bot is running!"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=5000)
+
+# Текст, який додається до кожного повідомлення
+FOOTER_TEXT = "\n\n📩 <b><a href='https://t.me/НазваВашогоБота'>Надіслати Новину</a></b>"
+
+# Інструкція для бота
 INSTRUCTION_TEXT = (
     "📋 <b>Інструкція з використання бота:</b>\n\n"
     "🔹 <b>Куди потрапляє новина:</b> Ваші новини можуть бути опубліковані у каналі ChatGPT Ukraine.\n"
@@ -35,7 +47,7 @@ INSTRUCTION_TEXT = (
     "2️⃣ Адміністратор розгляне вашу пропозицію та вирішить, чи публікувати її.\n"
     "3️⃣ Якщо новина затверджена, вона буде опублікована у каналі.\n\n"
     "📌 <b>Правила:</b>\n"
-    "- Максимальний обсяг новини — 1000 знаків. Якщо текст довший, він буде розміщений у кількох повідомленнях.\n"
+    "- Максимальний обсяг новини — 1000 знаків. Якщо текст довший, він буде розділений на кілька повідомлень.\n"
     "- Форматування (жирний, курсив) та анкори не збережуться.\n"
     "- Посилання надсилайте у вигляді тексту (наприклад, https://example.com).\n\n"
     "🔒 <b>Ваше ім'я буде анонімним.</b> Якщо хочете, щоб вас згадали, додайте своє ім'я у тексті.\n\n"
@@ -53,9 +65,6 @@ def generate_approve_keyboard(message_id: int):
             [InlineKeyboardButton(text="✏️ Редагувати", callback_data=f"edit:{message_id}")]
         ]
     )
-
-# Текст, який додається до кожного повідомлення
-FOOTER_TEXT = "\n\n📩 <b><a href='https://t.me/НазваВашогоБота'>Надіслати Новину</a></b>"
 
 # Привітання при команді /start
 @dp.message(Command("start"))
@@ -77,7 +86,8 @@ async def show_help(message: Message):
 # Обробка новин від користувачів
 @dp.message(F.content_type.in_({ContentType.TEXT, ContentType.PHOTO, ContentType.VIDEO, ContentType.DOCUMENT}))
 async def handle_news(message: Message):
-    global pending_messages
+    pending_messages = {}
+
     pending_messages[message.message_id] = {
         "message": message,
         "media_type": message.content_type,
@@ -127,81 +137,10 @@ async def handle_news(message: Message):
     except Exception as e:
         logger.error(f"Помилка при відправці адміністратору: {e}")
 
-# Затвердження новини
-@dp.callback_query(F.data.startswith("approve"))
-async def approve_news(callback: CallbackQuery):
-    global pending_messages
-    _, message_id = callback.data.split(":")
-    message_data = pending_messages.pop(int(message_id), None)
-
-    if message_data:
-        try:
-            if message_data["media_type"] == ContentType.PHOTO:
-                await bot.send_photo(
-                    HIDDEN_CHANNEL_ID,
-                    photo=message_data["file_id"],
-                    caption=message_data["caption"] + FOOTER_TEXT
-                )
-            elif message_data["media_type"] == ContentType.VIDEO:
-                await bot.send_video(
-                    HIDDEN_CHANNEL_ID,
-                    video=message_data["file_id"],
-                    caption=message_data["caption"] + FOOTER_TEXT
-                )
-            elif message_data["media_type"] == ContentType.DOCUMENT:
-                await bot.send_document(
-                    HIDDEN_CHANNEL_ID,
-                    document=message_data["file_id"],
-                    caption=message_data["caption"] + FOOTER_TEXT
-                )
-            else:
-                await bot.send_message(
-                    HIDDEN_CHANNEL_ID,
-                    text=message_data["caption"] + FOOTER_TEXT
-                )
-            await callback.answer("✅ Новину опубліковано!")
-        except Exception as e:
-            logger.error(f"Помилка публікації новини: {e}")
-            await callback.answer("❌ Помилка при публікації.")
-    else:
-        await callback.answer("❌ Новина не знайдена або вже оброблена!")
-
-# Відхилення новини
-@dp.callback_query(F.data.startswith("reject"))
-async def reject_news(callback: CallbackQuery):
-    global pending_messages
-    _, message_id = callback.data.split(":")
-    if pending_messages.pop(int(message_id), None):
-        await callback.answer("❌ Новина відхилена.")
-        await callback.message.edit_text("❌ Ця новина була відхилена.")
-    else:
-        await callback.answer("❌ Новина не знайдена або вже оброблена!")
-
-# Редагування новини
-@dp.callback_query(F.data.startswith("edit"))
-async def edit_news(callback: CallbackQuery):
-    global pending_messages
-    _, message_id = callback.data.split(":")
-    message_data = pending_messages.get(int(message_id))
-
-    if message_data:
-        await callback.message.answer("✏️ Введіть новий текст для новини. Медійний файл залишиться без змін.")
-
-        @dp.message(F.text)
-        async def handle_edit_response(new_message: Message):
-            updated_text = new_message.text
-            message_data["caption"] = updated_text
-            try:
-                pending_messages[int(message_id)] = message_data
-                await new_message.answer("✅ Текст новини успішно оновлено. Медійний файл залишився без змін.")
-            except Exception as e:
-                logger.error(f"Помилка редагування новини: {e}")
-                await new_message.answer("❌ Сталася помилка під час редагування.")
-    else:
-        await callback.answer("❌ Новина не знайдена або вже оброблена!")
-
-# Головна функція
+# Основна функція бота
 async def main():
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.start()
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
