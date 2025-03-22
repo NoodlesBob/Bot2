@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # Конфігурація
 BOT_TOKEN = os.getenv("BOT_TOKEN")  # Токен бота
 ADMIN_ID = int(os.getenv("ADMIN_ID"))  # ID адміністратора
-HIDDEN_CHANNEL_ID = -1002570163026  # ID вашого каналу
+HIDDEN_CHANNEL_ID = -1002570163026  # ID прихованого каналу
 
 # Ініціалізація бота
 bot = Bot(
@@ -205,8 +205,8 @@ async def edit_news(callback: CallbackQuery):
             message_data["caption"] = updated_text
             try:
                 pending_messages[int(message_id)] = message_data
-                                await new_message.answer("✅ Текст новини успішно оновлено. Медійний файл залишився без змін.")
-            except Exception as e:
+                await new_message.answer("✅ Текст новини успішно оновлено. Медійний файл залишився без змін.")
+                        except Exception as e:
                 logger.error(f"Помилка редагування новини: {e}")
                 await new_message.answer("❌ Сталася помилка під час редагування.")
     else:
@@ -222,5 +222,6 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
+# Точка входу
 if __name__ == "__main__":
     asyncio.run(main())
