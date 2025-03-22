@@ -55,7 +55,7 @@ def generate_approve_keyboard(message_id: int):
     )
 
 # Текст, який додається до кожного повідомлення
-FOOTER_TEXT = "\n\n📩 <b><a href='https://t.me/НазваВашогоБота'>Надіслати Новину</a></b>"
+FOOTER_TEXT = "\n\n📩 <b><a href='https://t.me/Office_GPTUA_bot'>Надіслати Новину</a></b>"
 
 # Привітання при команді /start
 @dp.message(Command("start"))
