@@ -31,7 +31,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def index():
-    return "Bot is running!"
+    return "Bot is running on Render!"
 
 def run_flask():
     app.run(host="0.0.0.0", port=5000)
@@ -202,4 +202,25 @@ async def edit_news(callback: CallbackQuery):
         @dp.message(F.text)
         async def handle_edit_response(new_message: Message):
             updated_text = new_message.text
-            message_data
+            message_data["caption"] = updated_text
+            try:
+                pending_messages[int(message_id)] = message_data
+                                await new_message.answer("✅ Текст новини успішно оновлено. Медійний файл залишився без змін.")
+            except Exception as e:
+                logger.error(f"Помилка редагування новини: {e}")
+                await new_message.answer("❌ Сталася помилка під час редагування.")
+    else:
+        await callback.answer("❌ Новина не знайдена або вже оброблена!")
+
+# Основна функція
+async def main():
+    # Запускаємо Flask сервер у фоновому потоці
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.start()
+
+    # Запускаємо бота через Polling
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
